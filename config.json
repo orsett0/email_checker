@@ -1,0 +1,23 @@
+{
+    "dataset": [""],
+
+    "allow_single_data": false,
+    "allow_only_numeric": false,
+    "truncate_and_join": true,
+
+    "initials": {
+        "use": true,
+        "allow_middle": false
+    },
+    "random_numbers": {
+        "use": false,
+        "digits": [2, 4]
+    },
+
+    "deny_begin": [
+        ""
+    ],
+    "mandatory": [
+        ""
+    ]
+}
