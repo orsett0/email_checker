@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from collections import OrderedDict
 from curses import init_pair
 from itertools import permutations, product
@@ -10,10 +12,10 @@ from selenium.webdriver.common.proxy import Proxy, ProxyType
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.utils import ChromeType
 from loguru import logger
-import time, sys
+import time, sys, json
 
 # TODO FAI UNA CAZZO DI COSA PER PASSARE I PARAMETRI DA TERMINALE
-loglevel = 'INFO'
+loglevel = 'DEBUG'
 PROXY = '127.0.0.1:9050'
 data = sys.argv[1:]
 sep = ['.'] # google only allows dots
@@ -102,30 +104,41 @@ def isNumeric(value):
 
 logger.debug(f"Data provided: {data}")
 logger.debug(f"Using separators {sep}")
+logger.debug("Loading configuration from 'config.json'")
+config = {}
+with open('config.json', 'r') as file:
+    config = json.load(file)
+
 logger.info("Generating all possible username")
 
-logger.debug("    Calculating initials")
-initials = []
-for value in data:
-    if isNumeric(value): continue
-    if len(value) < 2: continue
+if config['initials']['use']:
+    logger.debug("    Calculating initials")
+    initials = []
+    for value in data:
+        if isNumeric(value): continue       # You don't want to get the initial of a number.
+        #if len(value) < 2: continue        # I don't remember why I put this.
 
-    initials.append('\x1F' + value[0])
-data += initials
+        initials.append('\x1F' + value[0])  # This way I can recognize them later.
+    data += initials
+
+if config['random_numbers']['use']:
+    for n in config['random_numbers']['digits']:
+        data += range(pow(10, n-1), pow(10, n))
 
 all = []
-logger.debug("    Generating all possible permutations...")
-for i in range(0, len(data)):
-    for e in permutations(data,i + 1):
+logger.debug(f"    Generating all possible permutations from {len(data)} elements...")
+for i in range(1 if config['allow_single_data'] else 2, len(data)):
+    for e in permutations(data,i):
         all.append(list(e))
 
-logger.debug("    Removing middle initials")
-for entry in all:
-    for value in entry[1:-1]:
-        if entry[0] != '\x1F': continue
+if not config['initials']['allow_middle']:
+    logger.debug("    Removing middle initials")
+    for entry in all:
+        for value in entry[1:-1]:
+            if entry[0] != '\x1F': continue
 
-        all.remove(entry)
-        break
+            all.remove(entry)
+            break
 
 logger.debug("    Considering special modifications")
 
@@ -151,40 +164,42 @@ logger.debug("    Considering special modifications")
 # all += withInitials
 
 # If there's a number with four digit, make an entry with only the last two
-toAdd = []
-for entry in all:
-    for value in entry:
-        if (len(value) != 4): continue
-        if not isNumeric(value): continue
+if not config['random_numbers']['use']:
+    toAdd = []
+    for entry in all:
+        for value in entry:
+            if (len(value) != 4): continue
+            if not isNumeric(value): continue
 
-        entryCpy = entry[:]
-        newValue = value[2:]
+            entryCpy = entry[:]
+            newValue = value[2:]
 
-        index = entryCpy.index(value)
+            index = entryCpy.index(value)
 
-        entryCpy.pop(index)
-        entryCpy.insert(index, newValue)
-        toAdd.append(entryCpy)
+            entryCpy.pop(index)
+            entryCpy.insert(index, newValue)
+            toAdd.append(entryCpy)
 
-        #logger.debug(f"    Added {entryCpy} from {entry}")
-all += toAdd
+            #logger.debug(f"    Added {entryCpy} from {entry}")
+    all += toAdd
 
 # ['alessio', 'orsini'] -> ['alessiorsini']
-for i in range(len(all)):
-    entry = all[i]
-    for j in range(len(entry) - 1):
-        if isNumeric(entry[j]) or isNumeric(entry[j + 1]): continue
-        if entry[j][0] == '\x1F' or entry[j + 1][0] == '\x1F': continue
+if config['truncate_and_join']:
+    for i in range(len(all)):
+        entry = all[i]
+        for j in range(len(entry) - 1):
+            if isNumeric(entry[j]) or isNumeric(entry[j + 1]): continue
+            if entry[j][0] == '\x1F' or entry[j + 1][0] == '\x1F': continue
 
-        if entry[j][-1] == entry[j + 1][0]:
-            newValue = entry[:j]
-            newValue += [entry[j][:-1] + entry[j + 1][:]]
+            if entry[j][-1] == entry[j + 1][0]:
+                newValue = entry[:j]
+                newValue += [entry[j][:-1] + entry[j + 1][:]]
 
-            if j < len(entry) - 2: 
-                newValue += entry[j+2:]
+                if j < len(entry) - 2: 
+                    newValue += entry[j+2:]
 
-            all.insert(i + 1, newValue)
-            #logger.debug(f"       {entry}: {newValue}")
+                all.insert(i + 1, newValue)
+                #logger.debug(f"       {entry}: {newValue}")
 
 for entry in all:
     for i in range(len(entry)):
@@ -214,7 +229,17 @@ all = new
 
 for entry in all:
     test = ''.join(entry)
-    if len(test) < 6 or len(test) > 30 or isNumeric(test): 
+
+    exclude = config['exclude']['list']
+
+    if config['exclude']['from_file'] is not None:
+        with open(config['exclude']['from_file']) as file:
+            exclude += file.readlines()
+
+    if (len(test) < 6 or len(test) > 30 
+    or (isNumeric(test) and not config['allow_only_numeric'])
+    or any(test.startswith(element) for element in config['deny_begin'])
+    or any(mail.startswith(test) for mail in exclude)):
         all.remove(entry)
 
 # TODO l'attesa di un secondo potrebbe non essere abbastanza per far comparire l'errore

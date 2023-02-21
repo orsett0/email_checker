@@ -1,2 +1,3 @@
 # email_checker
-Quest script genera una serie di possibili email e le controlla contro il servizio di google per vedere se esse sono esistenti oppure no.
+
+This script generates a list of mail addresses and bruteforces google sign in form to search for existing ones.
